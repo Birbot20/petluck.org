@@ -16,37 +16,51 @@ const gameCards = [
   { icon: "◉", name: "PvP", text: "Challenge another player.", accent: "pink" },
 ];
 
-function compact(value) {
-  const number = Number(value || 0);
-  if (number >= 1e9) return `${(number / 1e9).toFixed(number >= 1e11 ? 0 : 1)}B`;
-  if (number >= 1e6) return `${(number / 1e6).toFixed(number >= 1e8 ? 0 : 1)}M`;
-  if (number >= 1e3) return `${(number / 1e3).toFixed(1)}K`;
-  return number.toLocaleString();
-}
-
 export default function App() {
   const [active, setActive] = useState("Home");
   const [status, setStatus] = useState({ online: false, text: "Connecting to PetLuck" });
   const [notice, setNotice] = useState("");
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
+    const connected = new URLSearchParams(window.location.search).get("connected");
+    if (connected) {
+      setNotice("Discord connected. Welcome to PetLuck!");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
     if (!API_URL) {
       setStatus({ online: true, text: "Demo mode" });
       return;
     }
     let live = true;
-    fetch(`${API_URL}/api/public/status`)
+    fetch(`${API_URL}/api/public/status`, { credentials: "include" })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data) => live && setStatus({ online: Boolean(data.online), text: data.label || "Live" }))
       .catch(() => live && setStatus({ online: false, text: "Service unavailable" }));
+    fetch(`${API_URL}/api/me`, { credentials: "include" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => live && data?.user && setUser(data.user))
+      .catch(() => {});
     return () => { live = false; };
   }, []);
 
   const headline = useMemo(() => active === "Home" ? "Your luck starts here." : active, [active]);
 
-  function unavailable(feature) {
-    setNotice(`${feature} will open once Discord login is connected.`);
+  function notify(message) {
+    setNotice(message);
     window.setTimeout(() => setNotice(""), 3500);
+  }
+
+  function connectDiscord() {
+    if (!API_URL) {
+      notify("Discord sign-in will turn on when the private API is deployed.");
+      return;
+    }
+    window.location.assign(`${API_URL}/auth/discord`);
+  }
+
+  function unavailable(feature) {
+    notify(user ? `${feature} is coming to your dashboard soon.` : `${feature} opens after Discord login.`);
   }
 
   return (
@@ -62,7 +76,7 @@ export default function App() {
         </nav>
         <div className="top-actions">
           <span className={`service-pill ${status.online ? "live" : ""}`}><i /> {status.text}</span>
-          <button className="discord-button" onClick={() => unavailable("Discord login")}>Connect Discord</button>
+          <button className="discord-button" onClick={connectDiscord}>{user ? `@${user.username}` : "Connect Discord"}</button>
         </div>
       </header>
 
@@ -74,7 +88,7 @@ export default function App() {
             <h1>{headline}</h1>
             <p className="hero-text">Games, rewards, live PvP, and your PetLuck community—now in one clear place.</p>
             <div className="hero-actions">
-              <button className="primary" onClick={() => unavailable("Your account")}>Open dashboard <span>→</span></button>
+              <button className="primary" onClick={user ? () => unavailable("Your dashboard") : connectDiscord}>{user ? "Open dashboard" : "Connect Discord"} <span>→</span></button>
               <button className="secondary" onClick={() => setActive("Games")}>Explore games</button>
             </div>
             <div className="trust-row"><span>✦ Fair play</span><span>◉ Live community</span><span>◌ Discord-first</span></div>
@@ -82,7 +96,7 @@ export default function App() {
           <div className="hero-card">
             <div className="card-top"><span>YOUR BALANCE</span><span className="gem">◆</span></div>
             <strong>—</strong>
-            <p>Connect Discord to see your balance</p>
+            <p>{user ? `Signed in as @${user.username}` : "Connect Discord to see your balance"}</p>
             <div className="card-divider" />
             <div className="quick-stats"><span><b>—</b> Wagered</span><span><b>—</b> Rewards</span></div>
           </div>
@@ -124,7 +138,7 @@ export default function App() {
           <aside className="community-card">
             <p className="eyebrow">DAILY LOOP</p><h2>Stay in the game.</h2>
             <p>Join the Discord to claim rewards, take part in events, and find your next opponent.</p>
-            <button className="primary wide" onClick={() => unavailable("Discord login")}>Join PetLuck Discord <span>→</span></button>
+            <button className="primary wide" onClick={connectDiscord}>{user ? "Discord connected" : "Join PetLuck Discord"} <span>→</span></button>
           </aside>
         </section>
       </main>
