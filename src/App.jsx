@@ -21,10 +21,15 @@ export default function App() {
   const [status, setStatus] = useState({ online: false, text: "Connecting to PetLuck" });
   const [notice, setNotice] = useState("");
   const [user, setUser] = useState(null);
+  const [robloxOpen, setRobloxOpen] = useState(false);
+  const [robloxUsername, setRobloxUsername] = useState("");
+  const [robloxPhrase, setRobloxPhrase] = useState("");
+  const [robloxStep, setRobloxStep] = useState("start");
+  const [robloxBusy, setRobloxBusy] = useState(false);
 
   useEffect(() => {
-    const connected = new URLSearchParams(window.location.search).get("connected");
-    if (connected) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("connected")) {
       setNotice("Discord connected. Welcome to PetLuck!");
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -52,15 +57,57 @@ export default function App() {
   }
 
   function connectDiscord() {
-    if (!API_URL) {
-      notify("Discord sign-in will turn on when the private API is deployed.");
-      return;
-    }
+    if (!API_URL) return notify("Discord sign-in will turn on when the private API is deployed.");
     window.location.assign(`${API_URL}/auth/discord`);
   }
 
+  function openRoblox() {
+    if (!API_URL) return notify("Roblox sign-in will turn on when the private API is deployed.");
+    setRobloxOpen(true);
+    setRobloxStep("start");
+    setRobloxPhrase("");
+  }
+
+  async function startRoblox(event) {
+    event.preventDefault();
+    setRobloxBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/roblox/start`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: robloxUsername }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not find that Roblox account.");
+      setRobloxUsername(data.username);
+      setRobloxPhrase(data.phrase);
+      setRobloxStep("verify");
+    } catch (error) {
+      notify(error.message);
+    } finally {
+      setRobloxBusy(false);
+    }
+  }
+
+  async function verifyRoblox() {
+    setRobloxBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/auth/roblox/verify`, { method: "POST", credentials: "include" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Verification failed.");
+      setUser(data.user);
+      setRobloxOpen(false);
+      notify(`Roblox verified as @${data.user.robloxUsername}.`);
+    } catch (error) {
+      notify(error.message);
+    } finally {
+      setRobloxBusy(false);
+    }
+  }
+
   function unavailable(feature) {
-    notify(user ? `${feature} is coming to your dashboard soon.` : `${feature} opens after Discord login.`);
+    notify(user ? `${feature} is coming to your dashboard soon.` : `${feature} opens after sign-in.`);
   }
 
   return (
@@ -76,7 +123,7 @@ export default function App() {
         </nav>
         <div className="top-actions">
           <span className={`service-pill ${status.online ? "live" : ""}`}><i /> {status.text}</span>
-          <button className="discord-button" onClick={connectDiscord}>{user ? `@${user.username}` : "Connect Discord"}</button>
+          <button className="discord-button" onClick={connectDiscord}>{user?.username ? `@${user.username}` : "Connect Discord"}</button>
         </div>
       </header>
 
@@ -89,14 +136,14 @@ export default function App() {
             <p className="hero-text">Games, rewards, live PvP, and your PetLuck community—now in one clear place.</p>
             <div className="hero-actions">
               <button className="primary" onClick={user ? () => unavailable("Your dashboard") : connectDiscord}>{user ? "Open dashboard" : "Connect Discord"} <span>→</span></button>
-              <button className="secondary" onClick={() => setActive("Games")}>Explore games</button>
+              <button className="secondary" onClick={openRoblox}>Connect Roblox</button>
             </div>
             <div className="trust-row"><span>✦ Fair play</span><span>◉ Live community</span><span>◌ Discord-first</span></div>
           </div>
           <div className="hero-card">
             <div className="card-top"><span>YOUR BALANCE</span><span className="gem">◆</span></div>
             <strong>—</strong>
-            <p>{user ? `Signed in as @${user.username}` : "Connect Discord to see your balance"}</p>
+            <p>{user?.robloxUsername ? `Roblox verified as @${user.robloxUsername}` : user ? `Signed in as @${user.username}` : "Connect Discord or Roblox to get started"}</p>
             <div className="card-divider" />
             <div className="quick-stats"><span><b>—</b> Wagered</span><span><b>—</b> Rewards</span></div>
           </div>
@@ -138,10 +185,29 @@ export default function App() {
           <aside className="community-card">
             <p className="eyebrow">DAILY LOOP</p><h2>Stay in the game.</h2>
             <p>Join the Discord to claim rewards, take part in events, and find your next opponent.</p>
-            <button className="primary wide" onClick={connectDiscord}>{user ? "Discord connected" : "Join PetLuck Discord"} <span>→</span></button>
+            <button className="primary wide" onClick={openRoblox}>Verify Roblox <span>→</span></button>
           </aside>
         </section>
       </main>
+
+      {robloxOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => !robloxBusy && setRobloxOpen(false)}>
+        <section className="roblox-modal" role="dialog" aria-modal="true" aria-labelledby="roblox-title" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="modal-close" onClick={() => setRobloxOpen(false)} aria-label="Close">×</button>
+          <p className="eyebrow">ROBLOX VERIFICATION</p>
+          <h2 id="roblox-title">{robloxStep === "start" ? "Verify your Roblox account" : "Add your phrase to Roblox"}</h2>
+          {robloxStep === "start" ? <form onSubmit={startRoblox}>
+            <p>Enter your Roblox username. We’ll give you a private 12-word phrase to place in your Roblox bio.</p>
+            <label>Roblox username<input value={robloxUsername} onChange={(event) => setRobloxUsername(event.target.value)} placeholder="YourRobloxName" autoFocus required /></label>
+            <button className="primary wide" disabled={robloxBusy}>{robloxBusy ? "Checking..." : "Create verification phrase"} <span>→</span></button>
+          </form> : <div>
+            <p>Copy this exact phrase into the <b>About</b> section of your Roblox profile, save it, then verify.</p>
+            <code className="phrase">{robloxPhrase}</code>
+            <ol><li>Open your Roblox profile and choose Edit.</li><li>Paste the phrase in About and save.</li><li>Return here and select Verify now.</li></ol>
+            <button className="primary wide" onClick={verifyRoblox} disabled={robloxBusy}>{robloxBusy ? "Checking Roblox..." : "Verify now"} <span>→</span></button>
+            <button className="text-button modal-back" onClick={() => setRobloxStep("start")}>Use another username</button>
+          </div>}
+        </section>
+      </div>}
 
       <footer><span>© {new Date().getFullYear()} PetLuck</span><span>Play responsibly · Community rules apply</span></footer>
     </div>
