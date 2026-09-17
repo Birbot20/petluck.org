@@ -1,5 +1,7 @@
 import "dotenv/config";
 import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import jwt from "jsonwebtoken";
 
@@ -135,4 +137,15 @@ app.get("/api/me", (request, response) => {
 });
 
 app.post("/auth/logout", (_request, response) => { clearCookie(response, "petluck_session"); response.status(204).end(); });
+
+// Render serves the built dashboard and API together. This keeps all browser
+// requests same-origin and avoids relying on a separate static-site host.
+const serverDirectory = path.dirname(fileURLToPath(import.meta.url));
+const siteDirectory = path.resolve(serverDirectory, "..", "dist");
+app.use(express.static(siteDirectory));
+app.get("*", (request, response, next) => {
+  if (request.path === "/health" || request.path.startsWith("/api/") || request.path.startsWith("/auth/")) return next();
+  response.sendFile(path.join(siteDirectory, "index.html"));
+});
+
 app.listen(PORT, () => console.log(`PetLuck login API running on port ${PORT}`));

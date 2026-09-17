@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const API_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
+const API_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || (import.meta.env.PROD ? window.location.origin : "");
 const navItems = [["⌂", "Home"], ["◈", "Games"], ["⚔", "PvP"], ["◉", "Jackpot"], ["♜", "Leaderboard"], ["✦", "Rewards"], ["◎", "Profile"]];
 const games = [
   { icon: "♠", title: "Blackjack", text: "Hit, stand, double & split", hue: "violet" },
