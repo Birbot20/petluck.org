@@ -9,7 +9,7 @@ const required = ["WEB_ORIGIN", "SESSION_SECRET"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) throw new Error(`Missing required environment variable(s): ${missing.join(", ")}`);
 
-const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, WEB_ORIGIN, SESSION_SECRET, MONGODB_URI, MONGODB_DB = "petluck", PORT = 3000, NODE_ENV = "development" } = process.env;
+const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, WEB_ORIGIN, SESSION_SECRET, MONGODB_URI, MONGODB_DB = "petluck", ADMIN_USERNAME, ADMIN_PASSWORD, PORT = 3000, NODE_ENV = "development" } = process.env;
 const phraseWords = "amber anchor apple apron atlas autumn bamboo banner beacon berry bird blossom breeze brook canyon candle cedar cherry cloud coast copper coral comet creek crystal dawn delta drift ember falcon feather fern field flame forest galaxy garden glacier golden harbor hazel island ivory jasmine lantern maple meadow meteor mist moon mountain ocean olive orchid pebble pine prairie quartz raven river rose ruby sage shadow silver solar sparrow star stone storm summit sunrise timber valley velvet violet willow winter".split(" ");
 
 const app = express();
@@ -51,6 +51,18 @@ function signSession(values) { return jwt.sign(values, SESSION_SECRET, { expires
 function getSession(request) {
   const token = parseCookies(request).petluck_session;
   return token ? jwt.verify(token, SESSION_SECRET) : {};
+}
+function secureEquals(left, right) {
+  const leftBuffer = Buffer.from(String(left || ""));
+  const rightBuffer = Buffer.from(String(right || ""));
+  return leftBuffer.length === rightBuffer.length && leftBuffer.length > 0 && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+function requireAdmin(request, response, next) {
+  try {
+    const session = getSession(request);
+    if (session?.admin === true) return next();
+  } catch { /* expired or malformed session */ }
+  return response.status(401).json({ error: "Admin sign-in required." });
 }
 function getPlayerSession(request, response) {
   let session;
@@ -106,6 +118,36 @@ app.get("/health", (_request, response) => response.json({ ok: true }));
 app.get("/api/public/status", async (_request, response) => {
   const database = await getDatabase();
   response.json({ online: true, database: Boolean(database), label: database ? "MongoDB connected" : "Practice mode — database not configured" });
+});
+
+app.get("/api/admin/session", (request, response) => {
+  try {
+    const session = getSession(request);
+    response.json({ authenticated: session?.admin === true, username: session?.adminUsername || null, configured: Boolean(ADMIN_USERNAME && ADMIN_PASSWORD) });
+  } catch {
+    response.json({ authenticated: false, username: null, configured: Boolean(ADMIN_USERNAME && ADMIN_PASSWORD) });
+  }
+});
+
+app.post("/api/admin/login", (request, response) => {
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) return response.status(503).json({ error: "Admin credentials have not been configured on the server." });
+  const username = String(request.body?.username || "");
+  const password = String(request.body?.password || "");
+  if (!secureEquals(username, ADMIN_USERNAME) || !secureEquals(password, ADMIN_PASSWORD)) return response.status(401).json({ error: "Incorrect username or password." });
+  let prior = {};
+  try { prior = getSession(request); } catch { /* reset invalid session */ }
+  setCookie(response, "petluck_session", signSession({ ...prior, admin: true, adminUsername: ADMIN_USERNAME }), { maxAge: 60 * 60 * 8 });
+  response.json({ authenticated: true, username: ADMIN_USERNAME });
+});
+
+app.post("/api/admin/logout", (request, response) => {
+  let prior = {};
+  try { prior = getSession(request); } catch { /* reset invalid session */ }
+  delete prior.admin;
+  delete prior.adminUsername;
+  if (Object.keys(prior).length) setCookie(response, "petluck_session", signSession(prior), { maxAge: 60 * 60 * 24 * 7 });
+  else clearCookie(response, "petluck_session");
+  response.status(204).end();
 });
 
 app.get("/api/practice/state", async (request, response) => {
