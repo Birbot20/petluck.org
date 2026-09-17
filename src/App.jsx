@@ -1,26 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "");
-
-const demoActivity = [
-  { game: "Blackjack", detail: "Won 2.00×", amount: "+20.0M", kind: "win" },
-  { game: "Daily reward", detail: "Streak reward", amount: "+5.0M", kind: "reward" },
-  { game: "PvP Dice", detail: "Round completed", amount: "—", kind: "neutral" },
-  { game: "Message reward", detail: "Milestone progress", amount: "+1", kind: "reward" },
+const navItems = [["⌂", "Home"], ["◈", "Games"], ["⚔", "PvP"], ["◉", "Jackpot"], ["♜", "Leaderboard"], ["✦", "Rewards"], ["◎", "Profile"]];
+const games = [
+  { icon: "♠", title: "Blackjack", text: "Hit, stand, double & split", hue: "violet" },
+  { icon: "◌", title: "Mines", text: "Pick tiles. Cash out anytime.", hue: "cyan" },
+  { icon: "◈", title: "Dice", text: "Set a target and roll.", hue: "amber" },
+  { icon: "⚔", title: "PvP Duels", text: "Challenge the community.", hue: "rose" },
+  { icon: "🎁", title: "Cases", text: "Open a little luck.", hue: "lime" },
 ];
-
-const gameCards = [
-  { icon: "♠", name: "Blackjack", text: "Split, double, hit, or stand.", accent: "purple" },
-  { icon: "⌁", name: "Mines", text: "Choose your risk. Cash out anytime.", accent: "blue" },
-  { icon: "◈", name: "Dice", text: "Set your target and roll.", accent: "orange" },
-  { icon: "◉", name: "PvP", text: "Challenge another player.", accent: "pink" },
+const liveBets = [
+  ["♠", "Blackjack", "NovaLuck", "250M", "2.00×", "+250M", "win"],
+  ["◌", "Mines", "petmaster", "75M", "1.84×", "+63M", "win"],
+  ["◈", "Dice", "StarBlox", "120M", "0.00×", "—", "loss"],
+  ["⚔", "PvP Duel", "GemRunner", "1.5B", "2.00×", "+1.5B", "win"],
+];
+const chat = [
+  ["CrownApe", "Any PvP duels open?", "purple"], ["LuckyTails", "blackjack paid today", "orange"],
+  ["MintyGems", "ggs!", "green"], ["DiceWizard", "who wants a 100m dice?", "blue"],
+  ["RubyRush", "daily jackpot is huge", "red"],
 ];
 
 export default function App() {
   const [active, setActive] = useState("Home");
-  const [status, setStatus] = useState({ online: false, text: "Connecting to PetLuck" });
   const [notice, setNotice] = useState("");
   const [user, setUser] = useState(null);
+  const [status, setStatus] = useState({ online: false, text: "Checking" });
   const [robloxOpen, setRobloxOpen] = useState(false);
   const [robloxUsername, setRobloxUsername] = useState("");
   const [robloxPhrase, setRobloxPhrase] = useState("");
@@ -28,188 +33,102 @@ export default function App() {
   const [robloxBusy, setRobloxBusy] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("connected")) {
-      setNotice("Discord connected. Welcome to PetLuck!");
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    if (!API_URL) {
-      setStatus({ online: true, text: "Demo mode" });
-      return;
-    }
+    if (!API_URL) { setStatus({ online: true, text: "Demo mode" }); return; }
     let live = true;
-    fetch(`${API_URL}/api/public/status`, { credentials: "include" })
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data) => live && setStatus({ online: Boolean(data.online), text: data.label || "Live" }))
-      .catch(() => live && setStatus({ online: false, text: "Service unavailable" }));
-    fetch(`${API_URL}/api/me`, { credentials: "include" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => live && data?.user && setUser(data.user))
-      .catch(() => {});
+    Promise.all([
+      fetch(`${API_URL}/api/public/status`, { credentials: "include" }).then((r) => r.ok ? r.json() : null),
+      fetch(`${API_URL}/api/me`, { credentials: "include" }).then((r) => r.ok ? r.json() : null),
+    ]).then(([service, account]) => {
+      if (!live) return;
+      setStatus({ online: Boolean(service?.online), text: service?.label || "Service unavailable" });
+      if (account?.user) setUser(account.user);
+    }).catch(() => live && setStatus({ online: false, text: "Service unavailable" }));
     return () => { live = false; };
   }, []);
 
-  const headline = useMemo(() => active === "Home" ? "Your luck starts here." : active, [active]);
-
-  function notify(message) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(""), 3500);
-  }
-
-  function connectDiscord() {
-    if (!API_URL) return notify("Discord sign-in will turn on when the private API is deployed.");
-    window.location.assign(`${API_URL}/auth/discord`);
-  }
-
-  function openRoblox() {
-    if (!API_URL) return notify("Roblox sign-in will turn on when the private API is deployed.");
-    setRobloxOpen(true);
-    setRobloxStep("start");
-    setRobloxPhrase("");
-  }
+  function notify(message) { setNotice(message); window.setTimeout(() => setNotice(""), 3600); }
+  function connectDiscord() { if (!API_URL) return notify("Discord login turns on when the private API is deployed."); window.location.assign(`${API_URL}/auth/discord`); }
+  function openRoblox() { if (!API_URL) return notify("Roblox verification turns on when the private API is deployed."); setRobloxOpen(true); setRobloxStep("start"); setRobloxPhrase(""); }
+  function unavailable(label) { notify(user ? `${label} is coming to your PetLuck dashboard.` : `Sign in to open ${label}.`); }
 
   async function startRoblox(event) {
-    event.preventDefault();
-    setRobloxBusy(true);
+    event.preventDefault(); setRobloxBusy(true);
     try {
-      const response = await fetch(`${API_URL}/auth/roblox/start`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: robloxUsername }),
-      });
+      const response = await fetch(`${API_URL}/auth/roblox/start`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: robloxUsername }) });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not find that Roblox account.");
-      setRobloxUsername(data.username);
-      setRobloxPhrase(data.phrase);
-      setRobloxStep("verify");
-    } catch (error) {
-      notify(error.message);
-    } finally {
-      setRobloxBusy(false);
-    }
+      if (!response.ok) throw new Error(data.error || "Could not find that account.");
+      setRobloxUsername(data.username); setRobloxPhrase(data.phrase); setRobloxStep("verify");
+    } catch (error) { notify(error.message); } finally { setRobloxBusy(false); }
   }
-
   async function verifyRoblox() {
     setRobloxBusy(true);
     try {
       const response = await fetch(`${API_URL}/auth/roblox/verify`, { method: "POST", credentials: "include" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Verification failed.");
-      setUser(data.user);
-      setRobloxOpen(false);
-      notify(`Roblox verified as @${data.user.robloxUsername}.`);
-    } catch (error) {
-      notify(error.message);
-    } finally {
-      setRobloxBusy(false);
-    }
+      setUser(data.user); setRobloxOpen(false); notify(`Roblox verified as @${data.user.robloxUsername}.`);
+    } catch (error) { notify(error.message); } finally { setRobloxBusy(false); }
   }
 
-  function unavailable(feature) {
-    notify(user ? `${feature} is coming to your dashboard soon.` : `${feature} opens after sign-in.`);
-  }
+  return <div className="dashboard">
+    <aside className="sidebar">
+      <button className="logo" onClick={() => setActive("Home")}><span>✦</span><b>pet<span>luck</span></b></button>
+      <div className="side-label">PLAY</div>
+      <nav>{navItems.slice(0, 5).map(([icon, label]) => <button key={label} className={active === label ? "selected" : ""} onClick={() => { setActive(label); unavailable(label); }}><i>{icon}</i><span>{label}</span></button>)}</nav>
+      <div className="side-label">ACCOUNT</div>
+      <nav>{navItems.slice(5).map(([icon, label]) => <button key={label} className={active === label ? "selected" : ""} onClick={() => { setActive(label); unavailable(label); }}><i>{icon}</i><span>{label}</span></button>)}</nav>
+      <div className="side-bottom"><button onClick={connectDiscord}>◉ <span>Discord</span></button><button onClick={() => unavailable("Support")}>? <span>Support</span></button></div>
+    </aside>
 
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <button className="brand" onClick={() => setActive("Home")} aria-label="PetLuck home">
-          <span className="brand-mark">✦</span><span>pet<span>luck</span></span>
-        </button>
-        <nav className="nav-links" aria-label="Main navigation">
-          {["Home", "Games", "PvP", "Rewards", "Leaderboard"].map((item) => (
-            <button className={active === item ? "active" : ""} key={item} onClick={() => setActive(item)}>{item}</button>
-          ))}
-        </nav>
-        <div className="top-actions">
-          <span className={`service-pill ${status.online ? "live" : ""}`}><i /> {status.text}</span>
-          <button className="discord-button" onClick={connectDiscord}>{user?.username ? `@${user.username}` : "Connect Discord"}</button>
+    <section className="workspace">
+      <header className="header">
+        <button className="mobile-logo" onClick={() => setActive("Home")}>✦ petluck</button>
+        <div className="crumb"><span className={status.online ? "online" : ""} /> {status.text}</div>
+        <div className="header-actions">
+          <button className="balance" onClick={openRoblox}>◆ <b>—</b><small>GEMS</small></button>
+          <button className="deposit" onClick={openRoblox}>+ Add gems</button>
+          <button className="avatar" onClick={user ? () => unavailable("Profile") : connectDiscord}>{user?.robloxUsername?.[0] || user?.username?.[0] || "P"}</button>
         </div>
       </header>
 
-      <main>
-        {notice && <div className="notice" role="status">{notice}</div>}
-        <section className="hero">
-          <div className="hero-copy">
-            <p className="eyebrow">PETLUCK · DISCORD COMMUNITY</p>
-            <h1>{headline}</h1>
-            <p className="hero-text">Games, rewards, live PvP, and your PetLuck community—now in one clear place.</p>
-            <div className="hero-actions">
-              <button className="primary" onClick={user ? () => unavailable("Your dashboard") : connectDiscord}>{user ? "Open dashboard" : "Connect Discord"} <span>→</span></button>
-              <button className="secondary" onClick={openRoblox}>Connect Roblox</button>
-            </div>
-            <div className="trust-row"><span>✦ Fair play</span><span>◉ Live community</span><span>◌ Discord-first</span></div>
-          </div>
-          <div className="hero-card">
-            <div className="card-top"><span>YOUR BALANCE</span><span className="gem">◆</span></div>
-            <strong>—</strong>
-            <p>{user?.robloxUsername ? `Roblox verified as @${user.robloxUsername}` : user ? `Signed in as @${user.username}` : "Connect Discord or Roblox to get started"}</p>
-            <div className="card-divider" />
-            <div className="quick-stats"><span><b>—</b> Wagered</span><span><b>—</b> Rewards</span></div>
-          </div>
+      <main className="content">
+        {notice && <div className="toast">{notice}</div>}
+        <section className="welcome">
+          <div><p className="tag">✦ PETLUCK IS LIVE</p><h1>Play smart.<br /><em>Get lucky.</em></h1><p>Play your favorite games, meet the community, and build your luck.</p><div className="welcome-buttons"><button className="orange" onClick={openRoblox}>Verify Roblox <b>→</b></button><button className="ghost" onClick={connectDiscord}>◉ Connect Discord</button></div></div>
+          <div className="hero-orb"><span>◆</span><i>✦</i><i>✦</i><i>✦</i></div>
         </section>
 
-        <section className="stats-grid" aria-label="Community stats">
-          <article><p>ONLINE PLAYERS</p><b>—</b><span>Live after API connection</span></article>
-          <article><p>DAILY JACKPOT</p><b>—</b><span>Updated in real time</span></article>
-          <article><p>ACTIVE GAMES</p><b>—</b><span>Play through Discord</span></article>
-          <article><p>COMMUNITY REWARDS</p><b>—</b><span>Earn by taking part</span></article>
+        <section className="stats">
+          <article><span>◉</span><div><small>ONLINE PLAYERS</small><b>—</b><p>Connect API for live count</p></div></article>
+          <article><span>◆</span><div><small>DAILY JACKPOT</small><b>—</b><p>Updated by the bot</p></div></article>
+          <article><span>◌</span><div><small>YOUR BALANCE</small><b>—</b><p>{user?.robloxUsername ? `@ ${user.robloxUsername} verified` : "Sign in to view"}</p></div></article>
         </section>
 
-        <section className="section-head">
-          <div><p className="eyebrow">PICK YOUR PLAY</p><h2>Built for every kind of luck.</h2></div>
-          <button className="text-button" onClick={() => setActive("Games")}>View all games →</button>
-        </section>
+        <div className="section-title"><div><p className="tag">CHOOSE YOUR GAME</p><h2>Play your way</h2></div><button onClick={() => unavailable("Games")}>See all games →</button></div>
+        <section className="game-grid">{games.map((game) => <button className={`game ${game.hue}`} key={game.title} onClick={() => unavailable(game.title)}><span className="game-icon">{game.icon}</span><span className="go">↗</span><h3>{game.title}</h3><p>{game.text}</p></button>)}</section>
 
-        <section className="games-grid">
-          {gameCards.map((game) => (
-            <button key={game.name} className={`game-card ${game.accent}`} onClick={() => unavailable(game.name)}>
-              <span className="game-icon">{game.icon}</span>
-              <span className="game-arrow">↗</span>
-              <h3>{game.name}</h3><p>{game.text}</p>
-            </button>
-          ))}
-        </section>
-
-        <section className="lower-grid">
-          <article className="activity-panel">
-            <div className="panel-heading"><div><p className="eyebrow">YOUR ACTIVITY</p><h2>Recent movement</h2></div><button onClick={() => unavailable("History")}>View history</button></div>
-            <div className="activity-list">
-              {demoActivity.map((item) => <div className="activity" key={item.game}>
-                <span className={`activity-icon ${item.kind}`}>◆</span>
-                <span className="activity-copy"><b>{item.game}</b><small>{item.detail}</small></span>
-                <strong className={item.kind}>{item.amount}</strong>
-              </div>)}
-            </div>
-          </article>
-          <aside className="community-card">
-            <p className="eyebrow">DAILY LOOP</p><h2>Stay in the game.</h2>
-            <p>Join the Discord to claim rewards, take part in events, and find your next opponent.</p>
-            <button className="primary wide" onClick={openRoblox}>Verify Roblox <span>→</span></button>
-          </aside>
+        <section className="live-panel">
+          <div className="live-head"><div><p className="tag">COMMUNITY ACTION</p><h2>Live bets <span>●</span></h2></div><div><button className="filter selected-filter">All bets</button><button className="filter">Big wins</button></div></div>
+          <div className="bet-list">{liveBets.map(([icon, game, player, bet, multi, payout, result]) => <div className="bet-row" key={player}><span className="bet-icon">{icon}</span><b>{game}</b><span className="player">◉ {player}</span><span>{bet}</span><span className="multi">{multi}</span><strong className={result}>{payout}</strong></div>)}</div>
         </section>
       </main>
+    </section>
 
-      {robloxOpen && <div className="modal-backdrop" role="presentation" onMouseDown={() => !robloxBusy && setRobloxOpen(false)}>
-        <section className="roblox-modal" role="dialog" aria-modal="true" aria-labelledby="roblox-title" onMouseDown={(event) => event.stopPropagation()}>
-          <button className="modal-close" onClick={() => setRobloxOpen(false)} aria-label="Close">×</button>
-          <p className="eyebrow">ROBLOX VERIFICATION</p>
-          <h2 id="roblox-title">{robloxStep === "start" ? "Verify your Roblox account" : "Add your phrase to Roblox"}</h2>
-          {robloxStep === "start" ? <form onSubmit={startRoblox}>
-            <p>Enter your Roblox username. We’ll give you a private 12-word phrase to place in your Roblox bio.</p>
-            <label>Roblox username<input value={robloxUsername} onChange={(event) => setRobloxUsername(event.target.value)} placeholder="YourRobloxName" autoFocus required /></label>
-            <button className="primary wide" disabled={robloxBusy}>{robloxBusy ? "Checking..." : "Create verification phrase"} <span>→</span></button>
-          </form> : <div>
-            <p>Copy this exact phrase into the <b>About</b> section of your Roblox profile, save it, then verify.</p>
-            <code className="phrase">{robloxPhrase}</code>
-            <ol><li>Open your Roblox profile and choose Edit.</li><li>Paste the phrase in About and save.</li><li>Return here and select Verify now.</li></ol>
-            <button className="primary wide" onClick={verifyRoblox} disabled={robloxBusy}>{robloxBusy ? "Checking Roblox..." : "Verify now"} <span>→</span></button>
-            <button className="text-button modal-back" onClick={() => setRobloxStep("start")}>Use another username</button>
-          </div>}
-        </section>
-      </div>}
+    <aside className="chat-panel">
+      <header><div><span className="chat-dot" /> LIVE CHAT</div><button>×</button></header>
+      <div className="chat-messages">{chat.map(([name, message, color]) => <article key={name}><span className={`chat-avatar ${color}`}>{name[0]}</span><div><b>{name}</b><small>now</small><p>{message}</p></div></article>)}</div>
+      <div className="chat-input"><span>{user ? "Say something..." : "Login to chat..."}</span><button onClick={connectDiscord}>→</button></div>
+      <div className="chat-footer"><span>● 95 online</span><span>Be kind</span></div>
+    </aside>
 
-      <footer><span>© {new Date().getFullYear()} PetLuck</span><span>Play responsibly · Community rules apply</span></footer>
-    </div>
-  );
+    {robloxOpen && <div className="modal-backdrop" onMouseDown={() => !robloxBusy && setRobloxOpen(false)}>
+      <section className="roblox-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="modal-close" onClick={() => setRobloxOpen(false)}>×</button>
+        <div className="modal-art"><span>✦</span><b>PETLUCK</b><h2>Verify your<br />Roblox account.</h2><i>◆ ◆ ◆</i></div>
+        <div className="modal-form"><p className="tag">ROBLOX SIGN IN</p><h2>{robloxStep === "start" ? "Start verification" : "Your private phrase"}</h2>
+          {robloxStep === "start" ? <form onSubmit={startRoblox}><p>Enter your Roblox username. We’ll create a unique phrase only you can verify.</p><label>Roblox username<input value={robloxUsername} onChange={(event) => setRobloxUsername(event.target.value)} placeholder="YourRobloxUsername" autoFocus required /></label><button className="orange full" disabled={robloxBusy}>{robloxBusy ? "Checking..." : "Get verification phrase"} <b>→</b></button><div className="modal-or">OR</div><button type="button" className="discord-login" onClick={connectDiscord}>◉ Login with Discord</button></form> : <div><p>Put this phrase in your Roblox profile’s <b>About</b> section, save it, then come back.</p><code className="phrase">{robloxPhrase}</code><ol><li>Open your Roblox profile → Edit.</li><li>Paste the phrase into About and save.</li><li>Press Verify now below.</li></ol><button className="orange full" onClick={verifyRoblox} disabled={robloxBusy}>{robloxBusy ? "Checking Roblox..." : "Verify now"} <b>→</b></button><button className="link-button" onClick={() => setRobloxStep("start")}>Use a different username</button></div>}
+        </div>
+      </section>
+    </div>}
+  </div>;
 }
