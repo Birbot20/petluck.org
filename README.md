@@ -22,3 +22,6 @@ Copy `.env.example` to `.env` and set `VITE_API_URL` when the protected API brid
 ## Important
 
 The site intentionally does **not** expose balances, deposits, withdrawals, or game actions until Discord authentication and server-side authorization are installed. The next build stage is a secure API bridge in the Python bot plus Discord OAuth on the web backend.
+
+
+_Last refreshed by the GitHub Pages deployment workflow._
