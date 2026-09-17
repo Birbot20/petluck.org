@@ -52,10 +52,7 @@ app.use((request, response, next) => {
 });
 
 app.get("/health", (_request, response) => response.json({ ok: true }));
-
-app.get("/api/public/status", (_request, response) => {
-  response.json({ online: true, label: "PetLuck login ready" });
-});
+app.get("/api/public/status", (_request, response) => response.json({ online: true, label: "PetLuck login ready" }));
 
 app.get("/auth/discord", (_request, response) => {
   const state = crypto.randomBytes(32).toString("hex");
@@ -73,11 +70,13 @@ app.get("/auth/discord", (_request, response) => {
 
 app.get("/auth/discord/callback", async (request, response) => {
   try {
-    const { code, state } = request.query;
-    const cookies = parseCookies(request);
-    if (!code || !state || !crypto.timingSafeEqual(Buffer.from(String(state)), Buffer.from(cookies.petluck_oauth_state || "x"))) {
-      return response.status(400).send("Invalid or expired Discord sign-in request.");
-    }
+    const code = typeof request.query.code === "string" ? request.query.code : "";
+    const returnedState = typeof request.query.state === "string" ? request.query.state : "";
+    const storedState = parseCookies(request).petluck_oauth_state || "";
+    const validState = returnedState.length === storedState.length
+      && returnedState.length > 0
+      && crypto.timingSafeEqual(Buffer.from(returnedState), Buffer.from(storedState));
+    if (!code || !validState) return response.status(400).send("Invalid or expired Discord sign-in request.");
     clearCookie(response, "petluck_oauth_state");
 
     const tokenResponse = await fetch("https://discord.com/api/oauth2/token", {
@@ -87,7 +86,7 @@ app.get("/auth/discord/callback", async (request, response) => {
         client_id: DISCORD_CLIENT_ID,
         client_secret: DISCORD_CLIENT_SECRET,
         grant_type: "authorization_code",
-        code: String(code),
+        code,
         redirect_uri: DISCORD_REDIRECT_URI,
       }),
     });
