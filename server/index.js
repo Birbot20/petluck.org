@@ -9,12 +9,30 @@ const required = ["WEB_ORIGIN", "SESSION_SECRET"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) throw new Error(`Missing required environment variable(s): ${missing.join(", ")}`);
 
-const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, WEB_ORIGIN, SESSION_SECRET, PORT = 3000, NODE_ENV = "development" } = process.env;
+const { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, DISCORD_REDIRECT_URI, WEB_ORIGIN, SESSION_SECRET, MONGODB_URI, MONGODB_DB = "petluck", PORT = 3000, NODE_ENV = "development" } = process.env;
 const phraseWords = "amber anchor apple apron atlas autumn bamboo banner beacon berry bird blossom breeze brook canyon candle cedar cherry cloud coast copper coral comet creek crystal dawn delta drift ember falcon feather fern field flame forest galaxy garden glacier golden harbor hazel island ivory jasmine lantern maple meadow meteor mist moon mountain ocean olive orchid pebble pine prairie quartz raven river rose ruby sage shadow silver solar sparrow star stone storm summit sunrise timber valley velvet violet willow winter".split(" ");
 
 const app = express();
 app.set("trust proxy", 1);
 app.use(express.json({ limit: "4kb" }));
+
+let databasePromise = null;
+async function getDatabase() {
+  if (!MONGODB_URI) return null;
+  if (!databasePromise) {
+    databasePromise = import("mongodb").then(async ({ MongoClient }) => {
+      const client = new MongoClient(MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+      await client.connect();
+      console.log("MongoDB connected");
+      return client.db(MONGODB_DB);
+    }).catch((error) => {
+      databasePromise = null;
+      console.error("MongoDB connection failed:", error.message);
+      return null;
+    });
+  }
+  return databasePromise;
+}
 
 function parseCookies(request) {
   return Object.fromEntries((request.headers.cookie || "").split(";").filter(Boolean).map((part) => {
@@ -33,6 +51,38 @@ function signSession(values) { return jwt.sign(values, SESSION_SECRET, { expires
 function getSession(request) {
   const token = parseCookies(request).petluck_session;
   return token ? jwt.verify(token, SESSION_SECRET) : {};
+}
+function getPlayerSession(request, response) {
+  let session;
+  try { session = getSession(request); } catch { session = {}; }
+  if (!session.guestId && !session.robloxId) {
+    session = { ...session, guestId: crypto.randomUUID(), username: "Practice player" };
+    setCookie(response, "petluck_session", signSession(session), { maxAge: 60 * 60 * 24 * 30 });
+  }
+  const id = session.robloxId ? `roblox:${session.robloxId}` : `guest:${session.guestId}`;
+  const displayName = session.robloxUsername || session.globalName || session.username || "Practice player";
+  return { session, id, displayName };
+}
+function practiceState(document, player) {
+  return {
+    user: { id: player.id, displayName: player.displayName, robloxVerified: Boolean(player.session.robloxVerified) },
+    balance: Math.max(0, Math.min(Number(document?.balance ?? 10000), 1000000000)),
+    inventory: Array.isArray(document?.inventory) ? document.inventory : [],
+    history: Array.isArray(document?.history) ? document.history : [],
+  };
+}
+function sanitizePracticeState(input) {
+  const balance = Math.max(0, Math.min(Math.floor(Number(input?.balance) || 0), 1000000000));
+  const inventory = Array.isArray(input?.inventory) ? input.inventory.slice(0, 250).map((item) => ({
+    id: String(item?.id || crypto.randomUUID()).slice(0, 120), name: String(item?.name || "Unknown item").slice(0, 80),
+    case: String(item?.case || "Case").slice(0, 80), value: Math.max(0, Math.min(Math.floor(Number(item?.value) || 0), 1000000000)),
+  })) : [];
+  const history = Array.isArray(input?.history) ? input.history.slice(0, 100).map((entry) => ({
+    game: String(entry?.game || "Game").slice(0, 50), amount: Math.max(0, Math.min(Math.floor(Number(entry?.amount) || 0), 1000000000)),
+    result: String(entry?.result || "Completed").slice(0, 80), payout: Math.max(0, Math.min(Math.floor(Number(entry?.payout) || 0), 1000000000)),
+    at: String(entry?.at || "").slice(0, 30),
+  })) : [];
+  return { balance, inventory, history };
 }
 function makeRobloxPhrase() {
   const pool = [...phraseWords];
@@ -53,7 +103,37 @@ app.use((request, response, next) => {
 });
 
 app.get("/health", (_request, response) => response.json({ ok: true }));
-app.get("/api/public/status", (_request, response) => response.json({ online: true, label: "PetLuck login ready" }));
+app.get("/api/public/status", async (_request, response) => {
+  const database = await getDatabase();
+  response.json({ online: true, database: Boolean(database), label: database ? "MongoDB connected" : "Practice mode — database not configured" });
+});
+
+app.get("/api/practice/state", async (request, response) => {
+  const database = await getDatabase();
+  if (!database) return response.status(503).json({ error: "MongoDB is not configured yet." });
+  const player = getPlayerSession(request, response);
+  const players = database.collection("players");
+  await players.updateOne(
+    { _id: player.id },
+    { $setOnInsert: { displayName: player.displayName, balance: 10000, inventory: [], history: [], createdAt: new Date() }, $set: { updatedAt: new Date() } },
+    { upsert: true },
+  );
+  const document = await players.findOne({ _id: player.id });
+  response.json({ database: true, state: practiceState(document, player) });
+});
+
+app.put("/api/practice/state", async (request, response) => {
+  const database = await getDatabase();
+  if (!database) return response.status(503).json({ error: "MongoDB is not configured yet." });
+  const player = getPlayerSession(request, response);
+  const state = sanitizePracticeState(request.body);
+  await database.collection("players").updateOne(
+    { _id: player.id },
+    { $set: { ...state, displayName: player.displayName, updatedAt: new Date() }, $setOnInsert: { createdAt: new Date() } },
+    { upsert: true },
+  );
+  response.json({ database: true, state: { user: { id: player.id, displayName: player.displayName, robloxVerified: Boolean(player.session.robloxVerified) }, ...state } });
+});
 
 app.get("/auth/discord", (_request, response) => {
   if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !DISCORD_REDIRECT_URI) return response.status(503).send("Discord login is not configured yet.");
