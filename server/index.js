@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import express from "express";
 import jwt from "jsonwebtoken";
 
-const required = ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET", "DISCORD_REDIRECT_URI", "WEB_ORIGIN", "SESSION_SECRET"];
+const required = ["WEB_ORIGIN", "SESSION_SECRET"];
 const missing = required.filter((key) => !process.env[key]);
 if (missing.length) throw new Error(`Missing required environment variable(s): ${missing.join(", ")}`);
 
@@ -54,6 +54,7 @@ app.get("/health", (_request, response) => response.json({ ok: true }));
 app.get("/api/public/status", (_request, response) => response.json({ online: true, label: "PetLuck login ready" }));
 
 app.get("/auth/discord", (_request, response) => {
+  if (!DISCORD_CLIENT_ID || !DISCORD_CLIENT_SECRET || !DISCORD_REDIRECT_URI) return response.status(503).send("Discord login is not configured yet.");
   const state = crypto.randomBytes(32).toString("hex");
   setCookie(response, "petluck_oauth_state", state, { maxAge: 600 });
   response.redirect(`https://discord.com/oauth2/authorize?${new URLSearchParams({ client_id: DISCORD_CLIENT_ID, redirect_uri: DISCORD_REDIRECT_URI, response_type: "code", scope: "identify", state, prompt: "none" })}`);
