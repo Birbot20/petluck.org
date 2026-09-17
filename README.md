@@ -8,6 +8,7 @@ A React/Vite web experience for the PetLuck Discord community.
 - Landing dashboard for balance, rewards, activity, games, and PvP
 - Public, non-sensitive API integration point via `VITE_API_URL`
 - Clear web/API contract for connecting to the existing Python Discord bot
+- Automatic GitHub Pages deployment on every update to `main`
 
 ## Run locally
 
