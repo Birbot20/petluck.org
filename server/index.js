@@ -270,4 +270,9 @@ app.get("*", (request, response, next) => {
   response.sendFile(path.join(siteDirectory, "index.html"));
 });
 
-app.listen(PORT, () => console.log(`PetLuck login API running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`PetLuck login API running on port ${PORT}`);
+  // Connect eagerly so Render deploy logs immediately state whether the
+  // configured database is reachable, instead of waiting for a browser request.
+  getDatabase();
+});
